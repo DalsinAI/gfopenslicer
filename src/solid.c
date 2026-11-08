@@ -70,19 +70,23 @@ static v3 xform(gs_v p, const gs_cam *c, gs_v o)
     return r;
 }
 
-static void put(unsigned char *rgb, int w, int h, int x, int y, int lit)
+static void put_rgb(unsigned char *rgb, int w, int h, int x, int y, int r, int g, int b)
 {
     unsigned char *p;
-    if (lit < 0) lit = 0;
-    if (lit > 255) lit = 255;
     if (x < 0 || y < 0 || x >= w || y >= h) return;
+    if (r < 0) r = 0;
+    if (g < 0) g = 0;
+    if (b < 0) b = 0;
+    if (r > 255) r = 255;
+    if (g > 255) g = 255;
+    if (b > 255) b = 255;
     p = rgb + ((size_t)y * (size_t)w + (size_t)x) * 3;
-    p[0] = (unsigned char)(242 * lit / 255);
-    p[1] = (unsigned char)(176 * lit / 255);
-    p[2] = (unsigned char)(66 * lit / 255);
+    p[0] = (unsigned char)r;
+    p[1] = (unsigned char)g;
+    p[2] = (unsigned char)b;
 }
 
-static void fill(unsigned char *rgb, float *zb, int w, int h, v3 a, v3 b, v3 c, int lit)
+static void fill(unsigned char *rgb, float *zb, int w, int h, v3 a, v3 b, v3 c, int cr, int cg, int cb)
 {
     int minx, miny, maxx, maxy, x, y;
     float area, inv;
@@ -118,8 +122,28 @@ static void fill(unsigned char *rgb, float *zb, int w, int h, v3 a, v3 b, v3 c, 
             i = y * w + x;
             if (z <= zb[i]) continue;
             zb[i] = z;
-            put(rgb, w, h, x, y, lit);
+            put_rgb(rgb, w, h, x, y, cr, cg, cb);
         }
+    }
+}
+
+static void hair(unsigned char *rgb, float *zb, int w, int h, float x0, float y0, float z0, float x1, float y1, float z1)
+{
+    int steps, i;
+    float dx = x1 - x0, dy = y1 - y0;
+    steps = (int)(fabsf(dx) > fabsf(dy) ? fabsf(dx) : fabsf(dy));
+    if (steps < 1) steps = 1;
+    for (i = 0; i <= steps; i++) {
+        float t = (float)i / (float)steps;
+        int x = (int)(x0 + dx * t);
+        int y = (int)(y0 + dy * t);
+        float z = z0 + (z1 - z0) * t;
+        int k;
+        if (x < 0 || y < 0 || x >= w || y >= h) continue;
+        k = y * w + x;
+        if (z <= zb[k]) continue;
+        zb[k] = z;
+        put_rgb(rgb, w, h, x, y, 70, 78, 92);
     }
 }
 
@@ -176,6 +200,31 @@ int gs_view_solid(const gs_mesh *m, const gs_cam *cam, unsigned char *rgb, int w
      * of the bed. Applied after the fit, or the fit would cancel it. */
     ox = ((float)w - (maxx - minx) * s) * 0.5f - minx * s + c->panx * (maxx - minx) * s;
     oy = ((float)h - (maxy - miny) * s) * 0.5f - miny * s + c->pany * (maxy - miny) * s;
+    {
+        int g;
+        float x0 = m->min.x, x1 = m->max.x, y0 = m->min.y, y1 = m->max.y, z = m->min.z;
+        float dx = (x1 - x0) * 0.2f, dy = (y1 - y0) * 0.2f;
+        x0 -= dx;
+        x1 += dx;
+        y0 -= dy;
+        y1 += dy;
+        for (g = 0; g <= 4; g++) {
+            float u = x0 + (x1 - x0) * (float)g / 4.f;
+            float v = y0 + (y1 - y0) * (float)g / 4.f;
+            gs_v wa, wb;
+            v3 a, b;
+            wa = (gs_v){u, y0, z};
+            wb = (gs_v){u, y1, z};
+            a = xform(wa, c, o);
+            b = xform(wb, c, o);
+            hair(rgb, zb, w, h, ox + a.x * s, (float)h - (oy + a.y * s), a.z, ox + b.x * s, (float)h - (oy + b.y * s), b.z);
+            wa = (gs_v){x0, v, z};
+            wb = (gs_v){x1, v, z};
+            a = xform(wa, c, o);
+            b = xform(wb, c, o);
+            hair(rgb, zb, w, h, ox + a.x * s, (float)h - (oy + a.y * s), a.z, ox + b.x * s, (float)h - (oy + b.y * s), b.z);
+        }
+    }
     for (i = 0; i < m->n; i++) {
         v3 a = p[i * 3], b = p[i * 3 + 1], d = p[i * 3 + 2];
         float ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
@@ -184,6 +233,8 @@ int gs_view_solid(const gs_mesh *m, const gs_cam *cam, unsigned char *rgb, int w
         float ny = uz * vx - ux * vz;
         float nz = ux * vy - uy * vx;
         float len, nd, lit;
+        int cr, cg, cb;
+        float ax, ay, az;
         a.x = ox + a.x * s;
         a.y = (float)h - (oy + a.y * s);
         b.x = ox + b.x * s;
@@ -197,8 +248,24 @@ int gs_view_solid(const gs_mesh *m, const gs_cam *cam, unsigned char *rgb, int w
         nz /= len;
         nd = nx * -0.35f + ny * 0.82f + nz * 0.45f;
         if (nd < 0.f) nd = -nd;
-        lit = 70.f + 185.f * nd;
-        fill(rgb, zb, w, h, a, b, d, (int)lit);
+        lit = 0.45f + 0.55f * nd;
+        ax = fabsf(nx);
+        ay = fabsf(ny);
+        az = fabsf(nz);
+        if (az >= ax && az >= ay) {
+            cr = 230;
+            cg = 190;
+            cb = 80;
+        } else if (ax >= ay) {
+            cr = 196;
+            cg = 84;
+            cb = 62;
+        } else {
+            cr = 64;
+            cg = 150;
+            cb = 168;
+        }
+        fill(rgb, zb, w, h, a, b, d, (int)(cr * lit), (int)(cg * lit), (int)(cb * lit));
     }
     free(p);
     free(zb);
