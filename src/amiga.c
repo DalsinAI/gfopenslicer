@@ -5,6 +5,7 @@
 #include "gs_view.h"
 #include "markup.h"
 
+#include <devices/inputevent.h>
 #include <proto/asl.h>
 #include <proto/dos.h>
 #include <proto/exec.h>
@@ -22,8 +23,11 @@
 
 static const char version[] = GS_VERSTR;
 static gs_job job;
-static int view_i = -1;
+static gs_cam cam;
 static struct Window *win;
+static int dragging;
+static int drag_x, drag_y;
+static int drag_shift;
 
 static void say(olui *ui, const char *text)
 {
@@ -42,52 +46,34 @@ static float number(olui *ui, const char *id)
 
 static void show_layer(olui *ui, int index)
 {
-    view_i = index;
+    (void)index;
     olui_repaint(ui, olui_find(ui, "view"), NULL);
 }
 
-/* The view is drawn by us, into the window, over the dark bed GFOpenLayout
- * left. The lines are the same ones the host picture paints. */
+/* Drag turns the solid. Shift-drag pans. The wheel zooms. The picture is
+ * the CPU drawer; a chip takes the same triangles when gfopengpu.library
+ * says OGPU_ONGPU. */
 static void draw_view(void *userdata, const olui_el *el, int x, int y, int w, int h)
 {
-    char *text;
-    gs_line *ls = NULL;
-    int n = 0, i;
-    float minx, miny, maxx, maxy, dx, dy, s, ox, oy;
+    unsigned char *rgb;
+    int row, col;
     (void)userdata;
     (void)el;
-    SetAPen(win->RPort, 1);
-    RectFill(win->RPort, (WORD)x, (WORD)y, (WORD)(x + w - 1), (WORD)(y + h - 1));
-    if (view_i < 0 || !job.gcode) return;
-    text = (char *)malloc(48 * 1024);
-    if (!text || gs_job_layer(&job, view_i, text, 48 * 1024)) {
-        free(text);
+    rgb = (unsigned char *)malloc((size_t)w * (size_t)h * 3);
+    if (!rgb) return;
+    if (gs_view_solid(&job.mesh, &cam, rgb, w, h)) {
+        free(rgb);
         return;
     }
-    if (gs_view_lines(text, (int)strlen(text), &ls, &n, &minx, &miny, &maxx, &maxy) || !n) {
-        free(ls);
-        free(text);
-        return;
+    for (row = 0; row < h; row++) {
+        for (col = 0; col < w; col++) {
+            unsigned char *p = rgb + ((size_t)row * (size_t)w + (size_t)col) * 3;
+            int pen = p[0] < 40 ? 0 : p[0] < 140 ? 1 : 2;
+            SetAPen(win->RPort, (UBYTE)pen);
+            WritePixel(win->RPort, (WORD)(x + col), (WORD)(y + row));
+        }
     }
-    dx = maxx - minx;
-    dy = maxy - miny;
-    if (dx < 0.1f) dx = 0.1f;
-    if (dy < 0.1f) dy = 0.1f;
-    s = (float)(w - 24) / dx;
-    if ((float)(h - 24) / dy < s) s = (float)(h - 24) / dy;
-    ox = (float)x + ((float)w - dx * s) * 0.5f;
-    oy = (float)y + ((float)h - dy * s) * 0.5f;
-    SetAPen(win->RPort, 2);
-    for (i = 0; i < n; i++) {
-        int x0 = (int)(ox + (ls[i].x0 - minx) * s);
-        int y0 = (int)((float)(y + h) - (oy - (float)y + (ls[i].y0 - miny) * s));
-        int x1 = (int)(ox + (ls[i].x1 - minx) * s);
-        int y1 = (int)((float)(y + h) - (oy - (float)y + (ls[i].y1 - miny) * s));
-        Move(win->RPort, (WORD)x0, (WORD)y0);
-        Draw(win->RPort, (WORD)x1, (WORD)y1);
-    }
-    free(ls);
-    free(text);
+    free(rgb);
 }
 
 static void fill_layers(olui *ui)
@@ -153,7 +139,8 @@ static void on_slice(olui *ui, const olui_event *ev, void *userdata)
         return;
     }
     fill_layers(ui);
-    snprintf(status, sizeof status, "%d triangles, %d layers, wrote %s", job.triangles, job.layers, job.out_path);
+    snprintf(status, sizeof status, "%d triangles, %d layers, %s drawer", job.triangles, job.layers,
+             gs_view_on_gpu() ? "GPU" : "CPU");
     say(ui, status);
     olui_set_progress(ui, olui_find(ui, "progress"), 100);
 }
@@ -183,6 +170,7 @@ int main(void)
     olui_on(ui, "slice", OLUI_CLICK, on_slice, NULL);
     olui_on(ui, "layers", OLUI_SELECT, on_layer, NULL);
     gs_job_init(&job);
+    gs_cam_home(&cam);
     w = OpenWindowTags(NULL,
         WA_Title, (ULONG)"GFOpenSlicer",
         WA_InnerWidth, 640,
@@ -222,9 +210,33 @@ int main(void)
         int r;
         WaitPort(w->UserPort);
         while ((m = (struct IntuiMessage *)GetMsg(w->UserPort))) {
+            WORD mx = m->MouseX, my = m->MouseY;
+            ULONG cls = m->Class;
+            UWORD code = m->Code;
+            UWORD qual = m->Qualifier;
             r = olui_amiga_event(a, m);
             ReplyMsg((struct Message *)m);
             if (r == OLUI_AMIGA_CLOSE) goto done;
+            if (cls == IDCMP_MOUSEBUTTONS && code == SELECTDOWN) {
+                olui_rect box;
+                if (olui_box(ui, olui_find(ui, "view"), &box) &&
+                    mx >= w->BorderLeft + box.x && mx < w->BorderLeft + box.x + box.w &&
+                    my >= w->BorderTop + box.y && my < w->BorderTop + box.y + box.h) {
+                    dragging = 1;
+                    drag_x = mx;
+                    drag_y = my;
+                    drag_shift = (qual & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT)) != 0;
+                }
+            } else if (cls == IDCMP_MOUSEBUTTONS && code == SELECTUP) {
+                dragging = 0;
+            } else if (cls == IDCMP_MOUSEMOVE && dragging) {
+                float dx = (float)(mx - drag_x), dy = (float)(my - drag_y);
+                if (drag_shift) gs_cam_pan(&cam, dx, dy);
+                else gs_cam_orbit(&cam, dx * 0.01f, dy * 0.01f);
+                drag_x = mx;
+                drag_y = my;
+                olui_repaint(ui, olui_find(ui, "view"), NULL);
+            }
         }
         olui_amiga_draw(a);
     }

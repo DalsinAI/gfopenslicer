@@ -6,12 +6,16 @@ with no Amiga.
 
 ![The window, before a file is sliced](docs/window-empty.png)
 
-![A 10 mm cube, layer 0](docs/window-sliced.png)
+![A 10 mm cube, three faces](docs/window-sliced.png)
 
 Open asks for a file. Slice reads the fields and writes G-code next to the
-STL, with `.gcode` in place of `.stl`. The list is one row a layer. Choosing
-a row draws that layer in the view: the bed is dark, a travel is not drawn,
-and an extrusion is. The picture is fitted to the view.
+STL, with `.gcode` in place of `.stl`. The list is one row a layer. The pane
+is the solid, the way Cura and OctoPrint show a model: three faces of it,
+shaded. Drag turns it. Shift-drag pans. `gs_cam_zoom` is the wheel.
+
+The triangles are one scene. When `gfopengpu.library` is open and
+`OGPU_ONGPU` is set, a chip draws them. This machine has no chip, so the
+CPU drawer paints the same scene. That is what the picture below is.
 
 From the shell:
 
@@ -35,8 +39,8 @@ temperature command out.
 ## Not in this release
 
 One wall, not several. The skirt is a rectangle, not the outline. There is no
-brim, no support, and no start or end G-code of your own. The view shows the
-layer. It does not let you drag a point.
+brim, no support, and no start or end G-code of your own. The view is the solid. It does not yet lay the toolpaths back onto the
+model, and it does not let you move a face to the bed the way Cura does.
 
 ## Building
 

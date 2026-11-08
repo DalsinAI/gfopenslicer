@@ -14,6 +14,7 @@ void gs_job_free(gs_job *j)
     free(j->gcode);
     free(j->at);
     free(j->len);
+    gs_mesh_free(&j->mesh);
     memset(j, 0, sizeof *j);
 }
 
@@ -100,15 +101,16 @@ int gs_job_slice(gs_job *j, const char *in, const char *out, const gs_cfg *cfg, 
         gs_mesh_free(&mesh);
         return -1;
     }
-    gs_mesh_free(&mesh);
     if (fseek(f, 0, SEEK_END)) {
         fclose(f);
+        gs_mesh_free(&mesh);
         snprintf(err, (size_t)errlen, "cannot read the G-code back");
         return -1;
     }
     sz = ftell(f);
     if (sz < 0) {
         fclose(f);
+        gs_mesh_free(&mesh);
         snprintf(err, (size_t)errlen, "cannot read the G-code back");
         return -1;
     }
@@ -117,12 +119,14 @@ int gs_job_slice(gs_job *j, const char *in, const char *out, const gs_cfg *cfg, 
     if (!buf || (sz && fread(buf, 1, (size_t)sz, f) != (size_t)sz)) {
         free(buf);
         fclose(f);
+        gs_mesh_free(&mesh);
         snprintf(err, (size_t)errlen, "out of memory");
         return -1;
     }
     buf[sz] = 0;
     fclose(f);
     j->gcode = buf;
+    j->mesh = mesh;
     if (index_layers(j)) {
         snprintf(err, (size_t)errlen, "out of memory");
         return -1;

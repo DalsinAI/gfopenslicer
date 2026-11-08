@@ -205,6 +205,36 @@ int main(void)
         free(buf);
     }
 
+    {
+        gs_mesh m;
+        gs_cam cam;
+        unsigned char *a, *b;
+        int shades[8], i, used = 0, diff = 0;
+        char err[80];
+        expect(gs_stl_load(&m, "/tmp/gs-cube.stl", err, (int)sizeof err) == 0, "cube loads for the solid");
+        gs_mesh_repair(&m);
+        a = (unsigned char *)malloc(160 * 120 * 3);
+        b = (unsigned char *)malloc(160 * 120 * 3);
+        gs_cam_home(&cam);
+        expect(gs_view_solid(&m, &cam, a, 160, 120) == 0, "the solid draws");
+        expect(gs_view_on_gpu() == 0, "this machine has no chip");
+        memset(shades, 0, sizeof shades);
+        for (i = 0; i < 160 * 120; i++) {
+            if (a[i * 3] == 20) continue;
+            shades[a[i * 3] >> 5]++;
+        }
+        for (i = 0; i < 8; i++)
+            if (shades[i] > 40) used++;
+        expect(used >= 2, "the cube shows more than one face");
+        gs_cam_orbit(&cam, 0.8f, 0.f);
+        gs_view_solid(&m, &cam, b, 160, 120);
+        for (i = 0; i < 160 * 120 * 3; i++) diff += a[i] != b[i];
+        expect(diff > 500, "orbiting the camera moves the solid");
+        free(a);
+        free(b);
+        gs_mesh_free(&m);
+    }
+
     if (fails) {
         fprintf(stderr, "%d failed\n", fails);
         return 1;

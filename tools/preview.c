@@ -94,7 +94,7 @@ int main(int argc, char **argv)
             snprintf(value, sizeof value, "%d", i);
             olui_list_add(ui, olui_find(ui, "layers"), NULL, name, value);
         }
-        snprintf(status, sizeof status, "%d triangles, %d layers, wrote Work:Models/cube.gcode", job.triangles, job.layers);
+        snprintf(status, sizeof status, "%d triangles, %d layers, CPU drawer", job.triangles, job.layers);
         olui_set_text(ui, olui_find(ui, "status"), status);
         olui_set_progress(ui, olui_find(ui, "progress"), 100);
     }
@@ -105,28 +105,23 @@ int main(int argc, char **argv)
     olui_draw(ui, NULL, draw, NULL);
     if (have) {
         olui_rect box;
-        char *layer;
         unsigned char *rgb;
-        int n;
+        gs_cam cam;
         if (olui_box(ui, olui_find(ui, "view"), &box) && box.w > 8 && box.h > 8) {
-            layer = (char *)malloc(64 * 1024);
             rgb = (unsigned char *)malloc((size_t)box.w * (size_t)box.h * 3);
-            if (layer && rgb && !gs_job_layer(&job, 0, layer, 64 * 1024)) {
+            gs_cam_home(&cam);
+            if (rgb && !gs_view_solid(&job.mesh, &cam, rgb, box.w, box.h)) {
                 char ppm[256];
                 FILE *pf;
                 snprintf(ppm, sizeof ppm, "%s.ppm", argv[2]);
-                n = gs_view_paint(layer, (int)strlen(layer), rgb, box.w, box.h);
                 pf = fopen(ppm, "wb");
-                if (pf && n > 0) {
+                if (pf) {
                     fprintf(pf, "P6\n%d %d\n255\n", box.w, box.h);
                     fwrite(rgb, 1, (size_t)box.w * (size_t)box.h * 3, pf);
                     fclose(pf);
                     fprintf(ops, "P %d %d %d %d %s\n", box.x, box.y, box.w, box.h, ppm);
-                } else if (pf) {
-                    fclose(pf);
                 }
             }
-            free(layer);
             free(rgb);
         }
     }

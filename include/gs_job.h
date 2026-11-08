@@ -13,6 +13,7 @@ typedef struct {
     long *at;
     long *len;
     int triangles;
+    gs_mesh mesh; /* the solid the view turns */
 } gs_job;
 
 void gs_job_init(gs_job *j);
