@@ -4,6 +4,7 @@
  *   preview sliced stl out.ops
  * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gs_job.h"
+#include "gs_view.h"
 #include "markup.h"
 
 #include <gfopenlayout_ui.h>
@@ -60,6 +61,8 @@ int main(int argc, char **argv)
     olui *ui;
     char err[160];
     int w = 720, h = 390;
+    gs_job job;
+    int have = 0;
     if (argc < 3) return 2;
     ui = olui_new();
     olui_set_measure(ui, measure, NULL);
@@ -67,13 +70,11 @@ int main(int argc, char **argv)
         fprintf(stderr, "%s\n", err);
         return 1;
     }
+    gs_job_init(&job);
     if (strcmp(argv[1], "sliced") == 0) {
-        gs_job job;
         gs_cfg cfg;
-        char name[32], value[16], status[160], *layer;
+        char name[32], value[16], status[160];
         int i;
-        size_t cap = 64 * 1024;
-        gs_job_init(&job);
         gs_cfg_default(&cfg);
         cfg.layer_h = number(ui, "layer");
         cfg.infill = number(ui, "infill");
@@ -86,27 +87,51 @@ int main(int argc, char **argv)
             fprintf(stderr, "%s\n", argc < 4 ? "need an stl" : err);
             return 1;
         }
+        have = 1;
         olui_set_text(ui, olui_find(ui, "path"), "Work:Models/cube.stl");
         for (i = 0; i < job.layers; i++) {
             gs_job_layer_name(&job, i, name, (int)sizeof name);
             snprintf(value, sizeof value, "%d", i);
             olui_list_add(ui, olui_find(ui, "layers"), NULL, name, value);
         }
-        layer = (char *)malloc(cap);
-        if (layer && !gs_job_layer(&job, 0, layer, (int)cap))
-            olui_set_text(ui, olui_find(ui, "moves"), layer);
-        free(layer);
         snprintf(status, sizeof status, "%d triangles, %d layers, wrote Work:Models/cube.gcode", job.triangles, job.layers);
         olui_set_text(ui, olui_find(ui, "status"), status);
         olui_set_progress(ui, olui_find(ui, "progress"), 100);
-        gs_job_free(&job);
     }
     if (!olui_layout(ui, w, h)) return 1;
     ops = fopen(argv[2], "w");
     if (!ops) return 1;
     fprintf(ops, "W %d %d\n", w, h);
     olui_draw(ui, NULL, draw, NULL);
+    if (have) {
+        olui_rect box;
+        char *layer;
+        unsigned char *rgb;
+        int n;
+        if (olui_box(ui, olui_find(ui, "view"), &box) && box.w > 8 && box.h > 8) {
+            layer = (char *)malloc(64 * 1024);
+            rgb = (unsigned char *)malloc((size_t)box.w * (size_t)box.h * 3);
+            if (layer && rgb && !gs_job_layer(&job, 0, layer, 64 * 1024)) {
+                char ppm[256];
+                FILE *pf;
+                snprintf(ppm, sizeof ppm, "%s.ppm", argv[2]);
+                n = gs_view_paint(layer, (int)strlen(layer), rgb, box.w, box.h);
+                pf = fopen(ppm, "wb");
+                if (pf && n > 0) {
+                    fprintf(pf, "P6\n%d %d\n255\n", box.w, box.h);
+                    fwrite(rgb, 1, (size_t)box.w * (size_t)box.h * 3, pf);
+                    fclose(pf);
+                    fprintf(ops, "P %d %d %d %d %s\n", box.x, box.y, box.w, box.h, ppm);
+                } else if (pf) {
+                    fclose(pf);
+                }
+            }
+            free(layer);
+            free(rgb);
+        }
+    }
     fclose(ops);
+    gs_job_free(&job);
     olui_free(ui);
     return 0;
 }

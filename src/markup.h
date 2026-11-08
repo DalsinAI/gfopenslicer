@@ -26,7 +26,7 @@ static const char gs_markup[] =
     "</row>"
     "<row id=\"body\">"
     "<list id=\"layers\" style=\"width:148px\"></list>"
-    "<textarea id=\"moves\" style=\"flex:1\"></textarea>"
+    "<div id=\"view\" style=\"flex:1\"></div>"
     "</row>"
     "<span id=\"status\">Open an STL.</span>"
     "<progress id=\"progress\" value=\"0\"></progress>"
@@ -34,9 +34,9 @@ static const char gs_markup[] =
 
 static const char gs_css[] =
     "window{height:100%}"
-    "#body{height:230px}"
+    "#body{height:280px}"
     "#layers{width:148px}"
-    "#moves{flex:1}"
+    "#view{flex:1;background-color:#14161c}"
     "#path{flex:1}";
 
 #endif

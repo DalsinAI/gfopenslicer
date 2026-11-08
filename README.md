@@ -10,7 +10,8 @@ with no Amiga.
 
 Open asks for a file. Slice reads the fields and writes G-code next to the
 STL, with `.gcode` in place of `.stl`. The list is one row a layer. Choosing
-a row shows that layer.
+a row draws that layer in the view: the bed is dark, a travel is not drawn,
+and an extrusion is. The picture is fitted to the view.
 
 From the shell:
 
@@ -34,8 +35,8 @@ temperature command out.
 ## Not in this release
 
 One wall, not several. The skirt is a rectangle, not the outline. There is no
-brim, no support, and no start or end G-code of your own. There is no picture
-of the layer: the text is the layer.
+brim, no support, and no start or end G-code of your own. The view shows the
+layer. It does not let you drag a point.
 
 ## Building
 

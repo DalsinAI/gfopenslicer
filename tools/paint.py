@@ -105,6 +105,11 @@ def main():
                     d.line((cx, y + 1, cx, y + mh - 1), fill=c)
 
             paint_op(im, clip, mark)
+        elif line.startswith("P "):
+            x, y, pw, ph, path = line.split()[1:]
+            x, y, pw, ph = map(int, (x, y, pw, ph))
+            layer = Image.open(path).convert("RGBA")
+            im.paste(layer, (x, y))
     im.convert("RGB").save(sys.argv[2], "PNG")
 
 

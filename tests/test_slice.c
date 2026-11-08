@@ -1,6 +1,7 @@
 /* Host checks for the engine. A cube, a pyramid, an ASCII file, a mesh
  * with welded duplicates. MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gs.h"
+#include "gs_view.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -176,6 +177,34 @@ int main(void)
     expect(s.layers == 50, "pyramid has 50 layers");
     expect(s.first_span > s.last_span + 2.f, "the pyramid narrows");
     expect(s.in_last > 0, "the top still has a wall");
+
+    {
+        FILE *f = fopen("/tmp/gs-cube.gcode", "r");
+        char *buf;
+        const char *a, *b;
+        unsigned char *rgb;
+        int segs, brass = 0, i, n;
+        long sz;
+        fseek(f, 0, SEEK_END);
+        sz = ftell(f);
+        rewind(f);
+        buf = (char *)malloc((size_t)sz + 1);
+        n = (int)fread(buf, 1, (size_t)sz, f);
+        buf[n] = 0;
+        fclose(f);
+        a = strstr(buf, "; LAYER 0 ");
+        b = strstr(a, "; LAYER 1 ");
+        rgb = (unsigned char *)malloc(180 * 140 * 3);
+        segs = gs_view_paint(a, (int)(b - a), rgb, 180, 140);
+        expect(segs > 8, "the view draws the first layer");
+        for (i = 0; i < 180 * 140; i++)
+            if (rgb[i * 3] == 232 && rgb[i * 3 + 1] == 184) brass++;
+        expect(brass > 40, "the lines show on the bed");
+        expect(rgb[0] == 20 && rgb[2] == 28, "the corner of the bed stays empty");
+        free(rgb);
+        free(buf);
+    }
+
     if (fails) {
         fprintf(stderr, "%d failed\n", fails);
         return 1;

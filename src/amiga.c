@@ -2,11 +2,13 @@
  * it, asks ASL for a file, and fills the list from the slice.
  * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gs_job.h"
+#include "gs_view.h"
 #include "markup.h"
 
 #include <proto/asl.h>
 #include <proto/dos.h>
 #include <proto/exec.h>
+#include <proto/graphics.h>
 #include <proto/intuition.h>
 #include <libraries/asl.h>
 #include <intuition/intuition.h>
@@ -15,11 +17,13 @@
 #include <gfopenlayout_ui_amiga.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static const char version[] = GS_VERSTR;
 static gs_job job;
-static char layer_text[48 * 1024];
+static int view_i = -1;
+static struct Window *win;
 
 static void say(olui *ui, const char *text)
 {
@@ -38,11 +42,52 @@ static float number(olui *ui, const char *id)
 
 static void show_layer(olui *ui, int index)
 {
-    if (gs_job_layer(&job, index, layer_text, (int)sizeof layer_text)) {
-        olui_set_text(ui, olui_find(ui, "moves"), "");
+    view_i = index;
+    olui_repaint(ui, olui_find(ui, "view"), NULL);
+}
+
+/* The view is drawn by us, into the window, over the dark bed GFOpenLayout
+ * left. The lines are the same ones the host picture paints. */
+static void draw_view(void *userdata, const olui_el *el, int x, int y, int w, int h)
+{
+    char *text;
+    gs_line *ls = NULL;
+    int n = 0, i;
+    float minx, miny, maxx, maxy, dx, dy, s, ox, oy;
+    (void)userdata;
+    (void)el;
+    SetAPen(win->RPort, 1);
+    RectFill(win->RPort, (WORD)x, (WORD)y, (WORD)(x + w - 1), (WORD)(y + h - 1));
+    if (view_i < 0 || !job.gcode) return;
+    text = (char *)malloc(48 * 1024);
+    if (!text || gs_job_layer(&job, view_i, text, 48 * 1024)) {
+        free(text);
         return;
     }
-    olui_set_text(ui, olui_find(ui, "moves"), layer_text);
+    if (gs_view_lines(text, (int)strlen(text), &ls, &n, &minx, &miny, &maxx, &maxy) || !n) {
+        free(ls);
+        free(text);
+        return;
+    }
+    dx = maxx - minx;
+    dy = maxy - miny;
+    if (dx < 0.1f) dx = 0.1f;
+    if (dy < 0.1f) dy = 0.1f;
+    s = (float)(w - 24) / dx;
+    if ((float)(h - 24) / dy < s) s = (float)(h - 24) / dy;
+    ox = (float)x + ((float)w - dx * s) * 0.5f;
+    oy = (float)y + ((float)h - dy * s) * 0.5f;
+    SetAPen(win->RPort, 2);
+    for (i = 0; i < n; i++) {
+        int x0 = (int)(ox + (ls[i].x0 - minx) * s);
+        int y0 = (int)((float)(y + h) - (oy - (float)y + (ls[i].y0 - miny) * s));
+        int x1 = (int)(ox + (ls[i].x1 - minx) * s);
+        int y1 = (int)((float)(y + h) - (oy - (float)y + (ls[i].y1 - miny) * s));
+        Move(win->RPort, (WORD)x0, (WORD)y0);
+        Draw(win->RPort, (WORD)x1, (WORD)y1);
+    }
+    free(ls);
+    free(text);
 }
 
 static void fill_layers(olui *ui)
@@ -161,6 +206,7 @@ int main(void)
         fprintf(stderr, "GFOpenSlicer: the window did not open\n");
         return 20;
     }
+    win = w;
     a = olui_amiga_new(ui, w);
     if (!a) {
         CloseWindow(w);
@@ -170,6 +216,7 @@ int main(void)
         return 20;
     }
     olui_amiga_theme(a, NULL);
+    olui_amiga_own(a, olui_find(ui, "view"), draw_view, NULL);
     olui_amiga_layout(a);
     for (;;) {
         int r;
