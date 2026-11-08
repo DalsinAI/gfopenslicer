@@ -11,11 +11,12 @@ with no Amiga.
 Open asks for a file. Slice reads the fields and writes G-code next to the
 STL, with `.gcode` in place of `.stl`. The list is one row a layer. The pane
 is the solid, the way Cura and OctoPrint show a model: three faces of it,
-shaded. Drag turns it. Shift-drag pans. `gs_cam_zoom` is the wheel.
+shaded. Drag turns it. Shift-drag pans. `gs_cam_zoom` zooms.
 
-The triangles are one scene. When `gfopengpu.library` is open and
-`OGPU_ONGPU` is set, a chip draws them. This machine has no chip, so the
-CPU drawer paints the same scene. That is what the picture below is.
+The triangles are one scene. A chip would draw them through
+`gfopengpu.library` when `OGPU_ONGPU` is set. That hand-off is not wired.
+This machine has no chip, so the CPU drawer paints the scene, and that is
+the picture below.
 
 From the shell:
 
