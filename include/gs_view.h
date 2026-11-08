@@ -17,8 +17,11 @@ typedef struct {
 int gs_view_lines(const char *gcode, int len, gs_line **out, int *n,
                   float *minx, float *miny, float *maxx, float *maxy);
 
-/* Orbit like a slicer. Yaw turns the model. Pitch tilts it. Distance
- * zooms. Pan is in pixels of the view. */
+/* A turntable, which is how a slicer looks at a bed. Yaw turns around Z.
+ * Pitch tilts. Distance zooms. Pan is a fraction of the view, and it moves
+ * the point we look at in the plane of the screen, by more when the camera
+ * is further away: that rule is orbit-camera by Mikola Lysenko, MIT, 2013,
+ * written again here. A free tumble is not used, so the bed stays up. */
 typedef struct {
     float yaw, pitch, dist, panx, pany;
 } gs_cam;

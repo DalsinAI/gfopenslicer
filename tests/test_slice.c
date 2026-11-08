@@ -230,6 +230,13 @@ int main(void)
         gs_view_solid(&m, &cam, b, 160, 120);
         for (i = 0; i < 160 * 120 * 3; i++) diff += a[i] != b[i];
         expect(diff > 500, "orbiting the camera moves the solid");
+        gs_cam_home(&cam);
+        gs_view_solid(&m, &cam, a, 160, 120);
+        gs_cam_pan(&cam, 0.35f, 0.f);
+        gs_view_solid(&m, &cam, b, 160, 120);
+        diff = 0;
+        for (i = 0; i < 160 * 120 * 3; i++) diff += a[i] != b[i];
+        expect(diff > 500, "panning moves the point we look at");
         free(a);
         free(b);
         gs_mesh_free(&m);

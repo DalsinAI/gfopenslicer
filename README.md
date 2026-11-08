@@ -24,6 +24,23 @@ From the shell:
 gfopenslicer in.stl out.gcode LAYER=0.2 INFILL=20 LINE=0.4 FILAMENT=1.75 HOTEND=200 BED=60 SKIRT=1
 ```
 
+## Where the view comes from
+
+Cura, PrusaSlicer, OrcaSlicer and OctoPrint are AGPL-3.0. Their viewports
+are the picture this is aiming at, and none of that code is in here.
+
+The camera we did take is [orbit-camera](https://github.com/mikolalysenko/orbit-camera)
+(Mikola Lysenko, MIT, 2013): a point, a turn and a distance. A drag turns.
+Shift-drag moves the point in the plane of the screen, and the move is
+larger when the camera is further away. `gs_cam_zoom` changes the distance.
+Ours keeps Z up, a turntable, which is what a bed wants. A free tumble would
+roll the printer.
+
+Also MIT, and not copied: [meshview](https://github.com/fogleman/meshview) is
+that camera as an arcball on a GPU, in Go.
+[gcode-viewer](https://github.com/aligator/gcode-viewer) draws a toolpath as
+a mesh. That is the layer lines, next, not this release.
+
 ## What a slice does
 
 It reads a binary STL or an ASCII one. A binary file is little-endian, which

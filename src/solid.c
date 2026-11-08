@@ -1,5 +1,11 @@
 /* CPU drawer for the solid. The same triangles a chip draws through
  * gfopengpu.library when OGPU_ONGPU is set. There is no chip here.
+ *
+ * The camera is a turntable: yaw around Z, pitch to tilt, distance to
+ * zoom. Pan moves the look-at in the screen plane, scaled by the distance,
+ * which is the rule in Mikola Lysenko's orbit-camera (MIT, 2013), written
+ * again here. Cura and PrusaSlicer do the same turntable; their code is
+ * AGPL and is not in this file.
  * MIT, Copyright (c) 2026 AmiCradle Team. */
 #include "gs_view.h"
 
@@ -26,8 +32,10 @@ void gs_cam_orbit(gs_cam *c, float dx, float dy)
 
 void gs_cam_pan(gs_cam *c, float dx, float dy)
 {
-    c->panx += dx;
-    c->pany += dy;
+    /* dx, dy are fractions of the window. Dividing by dist makes the same
+     * drag move fewer millimetres when the camera is closer. */
+    c->panx += dx / c->dist;
+    c->pany += dy / c->dist;
 }
 
 void gs_cam_zoom(gs_cam *c, float factor)
@@ -164,8 +172,10 @@ int gs_view_solid(const gs_mesh *m, const gs_cam *cam, unsigned char *rgb, int w
     s = (float)(w - 36) / (maxx - minx);
     if ((float)(h - 36) / (maxy - miny) < s) s = (float)(h - 36) / (maxy - miny);
     s *= c->dist;
-    ox = ((float)w - (maxx - minx) * s) * 0.5f - minx * s + c->panx;
-    oy = ((float)h - (maxy - miny) * s) * 0.5f - miny * s + c->pany;
+    /* Pan is a fraction of the fitted model, so a closer view moves less
+     * of the bed. Applied after the fit, or the fit would cancel it. */
+    ox = ((float)w - (maxx - minx) * s) * 0.5f - minx * s + c->panx * (maxx - minx) * s;
+    oy = ((float)h - (maxy - miny) * s) * 0.5f - miny * s + c->pany * (maxy - miny) * s;
     for (i = 0; i < m->n; i++) {
         v3 a = p[i * 3], b = p[i * 3 + 1], d = p[i * 3 + 2];
         float ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;

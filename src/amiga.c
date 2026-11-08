@@ -231,7 +231,7 @@ int main(void)
                 dragging = 0;
             } else if (cls == IDCMP_MOUSEMOVE && dragging) {
                 float dx = (float)(mx - drag_x), dy = (float)(my - drag_y);
-                if (drag_shift) gs_cam_pan(&cam, dx, dy);
+                if (drag_shift) gs_cam_pan(&cam, dx / 400.f, -dy / 400.f);
                 else gs_cam_orbit(&cam, dx * 0.01f, dy * 0.01f);
                 drag_x = mx;
                 drag_y = my;
