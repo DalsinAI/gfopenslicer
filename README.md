@@ -76,7 +76,7 @@ plate, so a move is visible.
 
 `preview/` is the browser bench. It is ahead of `src/make.c`. It is in this tree so that work is not only on one machine.
 
-Add drops a block or a round on a 220 mm bed. On stands that shape on the selected part and joins it. Cut takes the height off the top. Place uses the W, D and H fields. A round uses W as the diameter. Dragging still draws the footprint. Pull and Chamfer move the face you clicked. A washer, a slot, a line and a ring are there. Join, cut, intersect and drill stop at 2,500 triangles.
+Add drops a block or a round on a 220 mm bed. On stands that shape on the selected part and joins it. Cut takes the height off the top. Place uses the W, D and H fields. A round uses W as the diameter. Dragging still draws the footprint. Pull and Chamfer move the face you clicked. A washer, a slot, a line and a ring are there. Drill bores one hole. Bolt circle bores several of that diameter on a pitch circle. Join, cut, intersect and drill stop at 2,500 triangles.
 
 The meshes in `preview/library/` are the shelf. The NASA ones are public domain. The Utah teapot is CC0. The wrench and the spacecraft are too heavy to cut. The Amiga window does not have these tools yet.
 

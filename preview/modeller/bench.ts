@@ -804,6 +804,61 @@ export class Bench {
     await this.applyBoolean(stock, tool, "subtract");
   }
 
+  async boltCircle(count: number, diameter: number, pcd: number) {
+    const stock = this.current();
+    if (!stock || this.busy) return;
+    const n = Math.max(2, Math.min(12, Math.round(count) || 4));
+    const d = Math.min(40, Math.max(0.5, Number.isFinite(diameter) ? diameter : 6));
+    const pitch = Math.min(180, Math.max(d + 1, Number.isFinite(pcd) ? pcd : 18));
+    const radius = pitch / 2;
+    const chord = 2 * radius * Math.sin(Math.PI / n);
+    if (chord < d + 0.3) {
+      this.setStatus("Those holes overlap. Use fewer, or a wider pitch circle.");
+      return;
+    }
+    if (this.parts.length >= 24) {
+      this.setStatus("Twenty-four parts is the limit on this bench.");
+      return;
+    }
+    stock.mesh.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(stock.mesh);
+    const cx = (box.min.x + box.max.x) / 2;
+    const cy = (box.min.y + box.max.y) / 2;
+    const half = Math.max(box.max.x - cx, cx - box.min.x, box.max.y - cy, cy - box.min.y);
+    if (radius + d / 2 > half + 0.4) {
+      this.setStatus(`Ø${round1(pitch)} mm is wider than ${stock.name}. The holes would miss it.`);
+      return;
+    }
+    const h = Math.max(6, box.max.z - box.min.z + 8);
+    const z0 = Math.min(box.min.z, 0) - 4;
+    const chunks: Float32Array[] = [];
+    let total = 0;
+    for (let i = 0; i < n; i++) {
+      const ang = (i * Math.PI * 2) / n;
+      const bit = cylinder(cx + Math.cos(ang) * radius, cy + Math.sin(ang) * radius, z0, d / 2, h, 28);
+      chunks.push(bit);
+      total += bit.length;
+    }
+    const tris = new Float32Array(total);
+    let at = 0;
+    for (const bit of chunks) {
+      tris.set(bit, at);
+      at += bit.length;
+    }
+    const name = `${n} × Ø${round1(d)} on Ø${round1(pitch)}`;
+    if (this.triCount(stock) > BOOLEAN_LIMIT || tris.length / 9 > BOOLEAN_LIMIT) {
+      this.setStatus(`${name} is too heavy to cut out of ${stock.name}.`);
+      return;
+    }
+    this.pushUndo();
+    const tool = this.makePart(tris, name, "#c47a5a");
+    this.selectedId = tool.id;
+    this.face = null;
+    this.pickPoint = null;
+    this.hideFace();
+    await this.applyBoolean(stock, tool, "subtract", false);
+  }
+
   deleteSelected() {
     const part = this.current();
     if (!part) return;

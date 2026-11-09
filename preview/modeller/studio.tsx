@@ -110,6 +110,8 @@ export function Studio() {
   const [snap, setSnap] = useState<BenchSnapshot | null>(null);
   const [hot, setHot] = useState(false);
   const [drill, setDrill] = useState("6");
+  const [holes, setHoles] = useState("4");
+  const [pcd, setPcd] = useState("16");
   const [height, setHeight] = useState("8");
   const [wide, setWide] = useState("20");
   const [deep, setDeep] = useState("14");
@@ -646,6 +648,24 @@ export function Studio() {
                   onClick={() => void bench?.drill(Number(drill))}
                 >
                   Drill through
+                </button>
+              </div>
+              <div className="drill-row" style={{ marginTop: 8 }}>
+                <label className="num">
+                  N
+                  <input inputMode="numeric" value={holes} onChange={(e) => setHoles(e.target.value)} />
+                </label>
+                <label className="num">
+                  PCD
+                  <input inputMode="decimal" value={pcd} onChange={(e) => setPcd(e.target.value)} />
+                </label>
+                <button
+                  type="button"
+                  className="tool"
+                  disabled={snap?.busy}
+                  onClick={() => void bench?.boltCircle(Number(holes), Number(drill), Number(pcd))}
+                >
+                  Bolt circle
                 </button>
               </div>
               <div className="cluster" style={{ marginTop: 8 }}>
