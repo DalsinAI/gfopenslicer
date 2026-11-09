@@ -147,15 +147,185 @@ static void hair(unsigned char *rgb, float *zb, int w, int h, float x0, float y0
     }
 }
 
+int gs_view_frame(const gs_mesh *m, const gs_cam *cam, int w, int h, gs_frame *f)
+{
+    float minx, miny, maxx, maxy, zmin, zmax;
+    int i, n;
+    if (!f || !cam || w < 4 || h < 4) return -1;
+    f->w = w;
+    f->h = h;
+    f->ox = f->oy = f->s = 0.f;
+    f->zmin = 0.f;
+    f->zmax = 1.f;
+    f->origin.x = f->origin.y = f->origin.z = 0.f;
+    if (!m || m->n < 1 || !m->t) return -1;
+    f->origin.x = (m->min.x + m->max.x) * 0.5f;
+    f->origin.y = (m->min.y + m->max.y) * 0.5f;
+    f->origin.z = (m->min.z + m->max.z) * 0.5f;
+    minx = miny = zmin = 1e30f;
+    maxx = maxy = zmax = -1e30f;
+    for (i = 0; i < m->n; i++) {
+        gs_v p[3];
+        p[0] = m->t[i].a;
+        p[1] = m->t[i].b;
+        p[2] = m->t[i].c;
+        for (n = 0; n < 3; n++) {
+            v3 r = xform(p[n], cam, f->origin);
+            if (r.x < minx) minx = r.x;
+            if (r.y < miny) miny = r.y;
+            if (r.z < zmin) zmin = r.z;
+            if (r.x > maxx) maxx = r.x;
+            if (r.y > maxy) maxy = r.y;
+            if (r.z > zmax) zmax = r.z;
+        }
+    }
+    if (maxx - minx < 0.01f) maxx = minx + 0.01f;
+    if (maxy - miny < 0.01f) maxy = miny + 0.01f;
+    f->s = (float)(w - 36) / (maxx - minx);
+    if ((float)(h - 36) / (maxy - miny) < f->s) f->s = (float)(h - 36) / (maxy - miny);
+    f->s *= cam->dist;
+    /* Pan is a fraction of the fitted model, so a closer view moves less
+     * of the bed. Applied after the fit, or the fit would cancel it. */
+    f->ox = ((float)w - (maxx - minx) * f->s) * 0.5f - minx * f->s + cam->panx * (maxx - minx) * f->s;
+    f->oy = ((float)h - (maxy - miny) * f->s) * 0.5f - miny * f->s + cam->pany * (maxy - miny) * f->s;
+    f->zmin = zmin;
+    f->zmax = zmax;
+    return 0;
+}
+
+int gs_view_frame_bed(const gs_mesh *m, const gs_cam *cam, int w, int h,
+                      float x0, float y0, float x1, float y1, gs_frame *f)
+{
+    float minx, miny, maxx, maxy, zmin, zmax, zh, xs[2], ys[2];
+    int i, a, b;
+    if (!f || !cam || w < 4 || h < 4) return -1;
+    if (x1 < x0) {
+        float t = x0;
+        x0 = x1;
+        x1 = t;
+    }
+    if (y1 < y0) {
+        float t = y0;
+        y0 = y1;
+        y1 = t;
+    }
+    f->w = w;
+    f->h = h;
+    f->origin.x = (x0 + x1) * 0.5f;
+    f->origin.y = (y0 + y1) * 0.5f;
+    f->origin.z = 0.f;
+    zh = (x1 - x0) > (y1 - y0) ? (x1 - x0) : (y1 - y0);
+    if (zh < 1.f) zh = 1.f;
+    minx = miny = zmin = 1e30f;
+    maxx = maxy = zmax = -1e30f;
+    xs[0] = x0;
+    xs[1] = x1;
+    ys[0] = y0;
+    ys[1] = y1;
+    for (a = 0; a < 2; a++) {
+        for (b = 0; b < 2; b++) {
+            float zz;
+            for (i = 0; i < 2; i++) {
+                gs_v p;
+                v3 r;
+                zz = i ? zh : 0.f;
+                p.x = xs[a];
+                p.y = ys[b];
+                p.z = zz;
+                r = xform(p, cam, f->origin);
+                if (r.x < minx) minx = r.x;
+                if (r.y < miny) miny = r.y;
+                if (r.z < zmin) zmin = r.z;
+                if (r.x > maxx) maxx = r.x;
+                if (r.y > maxy) maxy = r.y;
+                if (r.z > zmax) zmax = r.z;
+            }
+        }
+    }
+    if (m && m->t) {
+        for (i = 0; i < m->n; i++) {
+            gs_v p[3];
+            int n;
+            p[0] = m->t[i].a;
+            p[1] = m->t[i].b;
+            p[2] = m->t[i].c;
+            for (n = 0; n < 3; n++) {
+                v3 r = xform(p[n], cam, f->origin);
+                if (r.z < zmin) zmin = r.z;
+                if (r.z > zmax) zmax = r.z;
+            }
+        }
+    }
+    if (maxx - minx < 0.01f) maxx = minx + 0.01f;
+    if (maxy - miny < 0.01f) maxy = miny + 0.01f;
+    f->s = (float)(w - 36) / (maxx - minx);
+    if ((float)(h - 36) / (maxy - miny) < f->s) f->s = (float)(h - 36) / (maxy - miny);
+    f->s *= cam->dist;
+    f->ox = ((float)w - (maxx - minx) * f->s) * 0.5f - minx * f->s + cam->panx * (maxx - minx) * f->s;
+    f->oy = ((float)h - (maxy - miny) * f->s) * 0.5f - miny * f->s + cam->pany * (maxy - miny) * f->s;
+    f->zmin = zmin;
+    f->zmax = zmax;
+    return 0;
+}
+
+void gs_view_map(const gs_frame *f, const gs_cam *cam, gs_v p, float *x, float *y, float *z)
+{
+    v3 r = xform(p, cam, f->origin);
+    *x = f->ox + r.x * f->s;
+    *y = (float)f->h - (f->oy + r.y * f->s);
+    *z = r.z;
+}
+
+int gs_view_colour(const gs_cam *cam, gs_v origin, gs_v a, gs_v b, gs_v c, int *r, int *g, int *bl)
+{
+    v3 pa = xform(a, cam, origin);
+    v3 pb = xform(b, cam, origin);
+    v3 pc = xform(c, cam, origin);
+    float ux = pb.x - pa.x, uy = pb.y - pa.y, uz = pb.z - pa.z;
+    float vx = pc.x - pa.x, vy = pc.y - pa.y, vz = pc.z - pa.z;
+    float nx = uy * vz - uz * vy;
+    float ny = uz * vx - ux * vz;
+    float nz = ux * vy - uy * vx;
+    float len, nd, lit;
+    float ax, ay, az;
+    int cr, cg, cb;
+    len = sqrtf(nx * nx + ny * ny + nz * nz);
+    if (len < 1e-8f) return -1;
+    nx /= len;
+    ny /= len;
+    nz /= len;
+    nd = nx * -0.35f + ny * 0.82f + nz * 0.45f;
+    if (nd < 0.f) nd = -nd;
+    lit = 0.45f + 0.55f * nd;
+    ax = fabsf(nx);
+    ay = fabsf(ny);
+    az = fabsf(nz);
+    if (az >= ax && az >= ay) {
+        cr = 230;
+        cg = 190;
+        cb = 80;
+    } else if (ax >= ay) {
+        cr = 196;
+        cg = 84;
+        cb = 62;
+    } else {
+        cr = 64;
+        cg = 150;
+        cb = 168;
+    }
+    *r = (int)(cr * lit);
+    *g = (int)(cg * lit);
+    *bl = (int)(cb * lit);
+    return 0;
+}
+
 int gs_view_solid(const gs_mesh *m, const gs_cam *cam, unsigned char *rgb, int w, int h)
 {
     gs_cam home;
     const gs_cam *c = cam;
-    gs_v o;
-    v3 *p;
+    gs_frame f;
     float *zb;
-    float minx, miny, maxx, maxy, s, ox, oy;
-    int i, n;
+    int i;
     if (!rgb || w < 4 || h < 4) return -1;
     if (!c) {
         gs_cam_home(&home);
@@ -166,40 +336,10 @@ int gs_view_solid(const gs_mesh *m, const gs_cam *cam, unsigned char *rgb, int w
         rgb[i * 3 + 1] = 22;
         rgb[i * 3 + 2] = 28;
     }
-    if (!m || m->n < 1 || !m->t) return 0;
-    p = (v3 *)malloc((size_t)m->n * 3 * sizeof *p);
+    if (gs_view_frame(m, c, w, h, &f)) return 0;
     zb = (float *)malloc((size_t)w * (size_t)h * sizeof *zb);
-    if (!p || !zb) {
-        free(p);
-        free(zb);
-        return -1;
-    }
+    if (!zb) return -1;
     for (i = 0; i < w * h; i++) zb[i] = -1e30f;
-    o.x = (m->min.x + m->max.x) * 0.5f;
-    o.y = (m->min.y + m->max.y) * 0.5f;
-    o.z = (m->min.z + m->max.z) * 0.5f;
-    minx = miny = 1e30f;
-    maxx = maxy = -1e30f;
-    for (i = 0; i < m->n; i++) {
-        p[i * 3] = xform(m->t[i].a, c, o);
-        p[i * 3 + 1] = xform(m->t[i].b, c, o);
-        p[i * 3 + 2] = xform(m->t[i].c, c, o);
-        for (n = 0; n < 3; n++) {
-            if (p[i * 3 + n].x < minx) minx = p[i * 3 + n].x;
-            if (p[i * 3 + n].y < miny) miny = p[i * 3 + n].y;
-            if (p[i * 3 + n].x > maxx) maxx = p[i * 3 + n].x;
-            if (p[i * 3 + n].y > maxy) maxy = p[i * 3 + n].y;
-        }
-    }
-    if (maxx - minx < 0.01f) maxx = minx + 0.01f;
-    if (maxy - miny < 0.01f) maxy = miny + 0.01f;
-    s = (float)(w - 36) / (maxx - minx);
-    if ((float)(h - 36) / (maxy - miny) < s) s = (float)(h - 36) / (maxy - miny);
-    s *= c->dist;
-    /* Pan is a fraction of the fitted model, so a closer view moves less
-     * of the bed. Applied after the fit, or the fit would cancel it. */
-    ox = ((float)w - (maxx - minx) * s) * 0.5f - minx * s + c->panx * (maxx - minx) * s;
-    oy = ((float)h - (maxy - miny) * s) * 0.5f - miny * s + c->pany * (maxy - miny) * s;
     {
         int g;
         float x0 = m->min.x, x1 = m->max.x, y0 = m->min.y, y1 = m->max.y, z = m->min.z;
@@ -212,62 +352,103 @@ int gs_view_solid(const gs_mesh *m, const gs_cam *cam, unsigned char *rgb, int w
             float u = x0 + (x1 - x0) * (float)g / 4.f;
             float v = y0 + (y1 - y0) * (float)g / 4.f;
             gs_v wa, wb;
-            v3 a, b;
+            float ax, ay, az, bx, by, bz;
             wa = (gs_v){u, y0, z};
             wb = (gs_v){u, y1, z};
-            a = xform(wa, c, o);
-            b = xform(wb, c, o);
-            hair(rgb, zb, w, h, ox + a.x * s, (float)h - (oy + a.y * s), a.z, ox + b.x * s, (float)h - (oy + b.y * s), b.z);
+            gs_view_map(&f, c, wa, &ax, &ay, &az);
+            gs_view_map(&f, c, wb, &bx, &by, &bz);
+            hair(rgb, zb, w, h, ax, ay, az, bx, by, bz);
             wa = (gs_v){x0, v, z};
             wb = (gs_v){x1, v, z};
-            a = xform(wa, c, o);
-            b = xform(wb, c, o);
-            hair(rgb, zb, w, h, ox + a.x * s, (float)h - (oy + a.y * s), a.z, ox + b.x * s, (float)h - (oy + b.y * s), b.z);
+            gs_view_map(&f, c, wa, &ax, &ay, &az);
+            gs_view_map(&f, c, wb, &bx, &by, &bz);
+            hair(rgb, zb, w, h, ax, ay, az, bx, by, bz);
         }
     }
     for (i = 0; i < m->n; i++) {
-        v3 a = p[i * 3], b = p[i * 3 + 1], d = p[i * 3 + 2];
-        float ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
-        float vx = d.x - a.x, vy = d.y - a.y, vz = d.z - a.z;
-        float nx = uy * vz - uz * vy;
-        float ny = uz * vx - ux * vz;
-        float nz = ux * vy - uy * vx;
-        float len, nd, lit;
+        float ax, ay, az, bx, by, bz, cx, cy, cz;
         int cr, cg, cb;
-        float ax, ay, az;
-        a.x = ox + a.x * s;
-        a.y = (float)h - (oy + a.y * s);
-        b.x = ox + b.x * s;
-        b.y = (float)h - (oy + b.y * s);
-        d.x = ox + d.x * s;
-        d.y = (float)h - (oy + d.y * s);
-        len = sqrtf(nx * nx + ny * ny + nz * nz);
-        if (len < 1e-8f) continue;
-        nx /= len;
-        ny /= len;
-        nz /= len;
-        nd = nx * -0.35f + ny * 0.82f + nz * 0.45f;
-        if (nd < 0.f) nd = -nd;
-        lit = 0.45f + 0.55f * nd;
-        ax = fabsf(nx);
-        ay = fabsf(ny);
-        az = fabsf(nz);
-        if (az >= ax && az >= ay) {
-            cr = 230;
-            cg = 190;
-            cb = 80;
-        } else if (ax >= ay) {
-            cr = 196;
-            cg = 84;
-            cb = 62;
-        } else {
-            cr = 64;
-            cg = 150;
-            cb = 168;
-        }
-        fill(rgb, zb, w, h, a, b, d, (int)(cr * lit), (int)(cg * lit), (int)(cb * lit));
+        v3 a, b, d;
+        if (gs_view_colour(c, f.origin, m->t[i].a, m->t[i].b, m->t[i].c, &cr, &cg, &cb)) continue;
+        gs_view_map(&f, c, m->t[i].a, &ax, &ay, &az);
+        gs_view_map(&f, c, m->t[i].b, &bx, &by, &bz);
+        gs_view_map(&f, c, m->t[i].c, &cx, &cy, &cz);
+        a.x = ax;
+        a.y = ay;
+        a.z = az;
+        b.x = bx;
+        b.y = by;
+        b.z = bz;
+        d.x = cx;
+        d.y = cy;
+        d.z = cz;
+        fill(rgb, zb, w, h, a, b, d, cr, cg, cb);
     }
-    free(p);
+    free(zb);
+    return 0;
+}
+
+int gs_view_bed(const gs_mesh *m, const gs_cam *cam, unsigned char *rgb, int w, int h)
+{
+    gs_cam home;
+    const gs_cam *c = cam;
+    gs_frame f;
+    float *zb;
+    int i;
+    if (!rgb || w < 4 || h < 4) return -1;
+    if (!c) {
+        gs_cam_home(&home);
+        c = &home;
+    }
+    for (i = 0; i < w * h; i++) {
+        rgb[i * 3] = 20;
+        rgb[i * 3 + 1] = 22;
+        rgb[i * 3 + 2] = 28;
+    }
+    if (gs_view_frame_bed(m, c, w, h, 0.f, 0.f, GS_BED, GS_BED, &f)) return -1;
+    zb = (float *)malloc((size_t)w * (size_t)h * sizeof *zb);
+    if (!zb) return -1;
+    for (i = 0; i < w * h; i++) zb[i] = -1e30f;
+    {
+        int g;
+        for (g = 0; g <= 4; g++) {
+            float u = GS_BED * (float)g / 4.f;
+            float v = GS_BED * (float)g / 4.f;
+            gs_v wa, wb;
+            float ax, ay, az, bx, by, bz;
+            wa = (gs_v){u, 0.f, 0.f};
+            wb = (gs_v){u, GS_BED, 0.f};
+            gs_view_map(&f, c, wa, &ax, &ay, &az);
+            gs_view_map(&f, c, wb, &bx, &by, &bz);
+            hair(rgb, zb, w, h, ax, ay, az, bx, by, bz);
+            wa = (gs_v){0.f, v, 0.f};
+            wb = (gs_v){GS_BED, v, 0.f};
+            gs_view_map(&f, c, wa, &ax, &ay, &az);
+            gs_view_map(&f, c, wb, &bx, &by, &bz);
+            hair(rgb, zb, w, h, ax, ay, az, bx, by, bz);
+        }
+    }
+    if (m && m->t) {
+        for (i = 0; i < m->n; i++) {
+            float ax, ay, az, bx, by, bz, cx, cy, cz;
+            int cr, cg, cb;
+            v3 a, b, d;
+            if (gs_view_colour(c, f.origin, m->t[i].a, m->t[i].b, m->t[i].c, &cr, &cg, &cb)) continue;
+            gs_view_map(&f, c, m->t[i].a, &ax, &ay, &az);
+            gs_view_map(&f, c, m->t[i].b, &bx, &by, &bz);
+            gs_view_map(&f, c, m->t[i].c, &cx, &cy, &cz);
+            a.x = ax;
+            a.y = ay;
+            a.z = az;
+            b.x = bx;
+            b.y = by;
+            b.z = bz;
+            d.x = cx;
+            d.y = cy;
+            d.z = cz;
+            fill(rgb, zb, w, h, a, b, d, cr, cg, cb);
+        }
+    }
     free(zb);
     return 0;
 }

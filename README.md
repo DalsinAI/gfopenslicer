@@ -13,10 +13,11 @@ STL, with `.gcode` in place of `.stl`. The list is one row a layer. The pane
 is the solid, the way Cura and OctoPrint show a model: three faces of it,
 shaded. Drag turns it. Shift-drag pans. `gs_cam_zoom` zooms.
 
-The triangles are one scene. A chip would draw them through
-`gfopengpu.library` when `OGPU_ONGPU` is set. That hand-off is not wired.
-This machine has no chip, so the CPU drawer paints the scene, and that is
-the picture below.
+The triangles are one scene. The slicer window still paints that scene with
+the CPU drawer. The editor submits the same triangles to
+`gfopengpu.library` as `OGPU_OP_TRIANGLES`, with a Z32 depth, on a retained
+surface, when the library is open. The pen drawer is only the fallback.
+We already have OpenGPU. This tree does not grow a second GPU.
 
 From the shell:
 
@@ -41,6 +42,16 @@ that camera as an arcball on a GPU, in Go.
 [gcode-viewer](https://github.com/aligator/gcode-viewer) draws a toolpath as
 a mesh. That is the layer lines, next, not this release.
 
+## Libraries
+
+Use a library we already have. Write a new one only when we cannot take one
+under MIT, BSD, Apache or BSL.
+
+`gfopenlayout.library` is the window. `gfopengpu.library` is the chip and
+its CPU back end: one batch, one retained surface. ASL is the file
+requester. Cura, PrusaSlicer and OrcaSlicer are the picture to aim at, and
+their code stays out. The booleans are ours, not a translation of JSCAD.
+
 ## What a slice does
 
 It reads a binary STL or an ASCII one. A binary file is little-endian, which
@@ -54,11 +65,18 @@ layer can have a rectangular skirt. Extrusion comes from the layer height,
 the line width and the filament diameter. A hotend or a bed of 0 leaves that
 temperature command out.
 
+The solid editor is `src/make.c`. It starts from a 20 mm cube with a
+cylinder cut out, on a 60 mm plate. Cube and Cylinder add a second part.
+Join, Cut and Intersect combine the selected part with the other one.
+Move, Rotate and Scale drag the selected part. Drop, Centre and Lay flat
+place it. Open, Save and Undo are there. The picture is fitted to the
+plate, so a move is visible.
+
 ## Not in this release
 
 One wall, not several. The skirt is a rectangle, not the outline. There is no
 brim, no support, and no start or end G-code of your own. The view is the solid. It does not yet lay the toolpaths back onto the
-model, and it does not let you move a face to the bed the way Cura does.
+model.
 
 ## Building
 
