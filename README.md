@@ -1,6 +1,6 @@
 # GFOpenSlicer
 
-GFOpenSlicer 0.1.0-rc1 slices an STL to G-code on AmigaOS 3.2. The window is
+GFOpenSlicer 0.1.0-rc1 slices an STL to G-code on AmigaOS 3.2. v0.2.0-rc1 adds the solid editor on OpenGPU, and the browser bench in `preview/`. The window is
 GFOpenLayout. The same engine runs from the shell, and the host tests run it
 with no Amiga.
 
@@ -71,6 +71,14 @@ Join, Cut and Intersect combine the selected part with the other one.
 Move, Rotate and Scale drag the selected part. Drop, Centre and Lay flat
 place it. Open, Save and Undo are there. The picture is fitted to the
 plate, so a move is visible.
+
+## Preview bench
+
+`preview/` is the browser bench. It is ahead of `src/make.c`. It is in this tree so that work is not only on one machine.
+
+Add drops a block or a round on a 220 mm bed. On stands that shape on the selected part and joins it. Cut takes the height off the top. Place uses the W, D and H fields. A round uses W as the diameter. Dragging still draws the footprint. Pull and Chamfer move the face you clicked. A washer, a slot, a line and a ring are there. Join, cut, intersect and drill stop at 2,500 triangles.
+
+The meshes in `preview/library/` are the shelf. The NASA ones are public domain. The Utah teapot is CC0. The wrench and the spacecraft are too heavy to cut. The Amiga window does not have these tools yet.
 
 ## Not in this release
 
