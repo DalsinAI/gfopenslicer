@@ -4,7 +4,7 @@ import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { cylinder, cube, intersect, subtract, union, volume } from "./gs.js";
 import { BED, BOOLEAN_LIMIT, METALS } from "./library";
-import { makeSolid, SOLID_LABEL, stadium, type SolidKind } from "./solids";
+import { coneAt, makeSolid, SOLID_LABEL, stadium, type SolidKind } from "./solids";
 import { encodeSTL, loadBuffer, normalizeUnits, parseSTL, thinTriangles } from "./stl";
 
 export type Tool = "translate" | "rotate" | "scale";
@@ -896,6 +896,43 @@ export class Bench {
     }
     const name = `Ø${round1(d)} × Cb Ø${round1(cb)} × ${round1(deep)}`;
     await this.cutTris(stock, tris, name);
+  }
+
+  async countersink(diameter: number, mouth: number) {
+    const stock = this.current();
+    if (!stock || this.busy) return;
+    const d = Math.min(40, Math.max(0.5, Number.isFinite(diameter) ? diameter : 6));
+    const wide = Math.min(80, Number.isFinite(mouth) ? mouth : d * 2);
+    if (wide < d + 0.4) {
+      this.setStatus("The countersink has to be wider than the drill.");
+      return;
+    }
+    stock.mesh.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(stock.mesh);
+    const thick = Math.max(0.4, box.max.z - box.min.z);
+    const depth = (wide - d) / 2;
+    if (depth >= thick - 0.15) {
+      this.setStatus("That 90° countersink is deeper than the part.");
+      return;
+    }
+    const aimed = this.face != null && this.pickPoint;
+    const cx = aimed ? this.pickPoint!.x : (box.min.x + box.max.x) / 2;
+    const cy = aimed ? this.pickPoint!.y : (box.min.y + box.max.y) / 2;
+    const half = Math.max(box.max.x - cx, cx - box.min.x, box.max.y - cy, cy - box.min.y);
+    if (wide / 2 > half + 0.2) {
+      this.setStatus("That countersink is wider than the part.");
+      return;
+    }
+    const throughH = Math.max(6, thick + 8);
+    const zThrough = Math.min(box.min.z, 0) - 4;
+    const drillBit = cylinder(cx, cy, zThrough, d / 2, throughH, 28);
+    const sinkBit = coneAt(cx, cy, box.max.z + 0.2, box.max.z - depth, wide / 2, 32);
+    const tris = union(drillBit, sinkBit);
+    if (!tris || tris.length < 36) {
+      this.setStatus("The countersink did not form a solid.");
+      return;
+    }
+    await this.cutTris(stock, tris, `Ø${round1(d)} × Csk Ø${round1(wide)} × 90°`);
   }
 
   async holeRow(count: number, diameter: number, pitch: number) {

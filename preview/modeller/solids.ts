@@ -30,19 +30,22 @@ function sphere(r: number): Float32Array {
 }
 
 function cone(r: number, h: number): Float32Array {
-  const seg = 32;
+  return coneAt(0, 0, -h / 2, h / 2, r, 32);
+}
+
+/** Closed cone. The wide end is at `zBase` and the point is at `zTip`. */
+export function coneAt(cx: number, cy: number, zBase: number, zTip: number, radius: number, seg = 32): Float32Array {
   const out: number[] = [];
-  const z0 = -h / 2;
-  const z1 = h / 2;
-  for (let i = 0; i < seg; i++) {
-    const a0 = (i / seg) * Math.PI * 2;
-    const a1 = ((i + 1) / seg) * Math.PI * 2;
-    const x0 = r * Math.cos(a0);
-    const y0 = r * Math.sin(a0);
-    const x1 = r * Math.cos(a1);
-    const y1 = r * Math.sin(a1);
-    tri(out, x0, y0, z0, 0, 0, z1, x1, y1, z0);
-    tri(out, 0, 0, z0, x1, y1, z0, x0, y0, z0);
+  const n = Math.max(3, seg);
+  for (let i = 0; i < n; i++) {
+    const a0 = (i / n) * Math.PI * 2;
+    const a1 = ((i + 1) / n) * Math.PI * 2;
+    const x0 = cx + radius * Math.cos(a0);
+    const y0 = cy + radius * Math.sin(a0);
+    const x1 = cx + radius * Math.cos(a1);
+    const y1 = cy + radius * Math.sin(a1);
+    tri(out, x0, y0, zBase, cx, cy, zTip, x1, y1, zBase);
+    tri(out, cx, cy, zBase, x1, y1, zBase, x0, y0, zBase);
   }
   return Float32Array.from(out);
 }

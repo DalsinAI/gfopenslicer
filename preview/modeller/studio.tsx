@@ -718,6 +718,14 @@ export function Studio() {
                 >
                   Counterbore
                 </button>
+                <button
+                  type="button"
+                  className="tool"
+                  disabled={snap?.busy}
+                  onClick={() => void bench?.countersink(Number(drill), Number(cbore))}
+                >
+                  Countersink
+                </button>
               </div>
               <div className="cluster" style={{ marginTop: 8 }}>
                 <button
