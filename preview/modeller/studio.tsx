@@ -112,6 +112,9 @@ export function Studio() {
   const [drill, setDrill] = useState("6");
   const [holes, setHoles] = useState("4");
   const [pcd, setPcd] = useState("16");
+  const [cbore, setCbore] = useState("12");
+  const [cdeep, setCdeep] = useState("4");
+  const [pitch, setPitch] = useState("8");
   const [height, setHeight] = useState("8");
   const [wide, setWide] = useState("20");
   const [deep, setDeep] = useState("14");
@@ -289,6 +292,9 @@ export function Studio() {
           >
             <Slice className="icon" /> Section
           </button>
+          <button type="button" className="tool" disabled={snap?.busy} onClick={() => void bench?.split()}>
+            Split
+          </button>
         </div>
       </header>
       <div className="body">
@@ -296,7 +302,7 @@ export function Studio() {
           <p className="kicker">Extrude</p>
           <p className="quiet">
             Add sits on the bed. On joins a boss to the selected part. Cut takes that depth off its top. Place uses W
-            and D. A round uses W as the diameter.
+            and D. A round uses W as the diameter. Keyway is a slot.
           </p>
           <div className="drill-row">
             <label className="num">
@@ -345,7 +351,13 @@ export function Studio() {
             <button
               type="button"
               className="tool"
-              onClick={() => bench?.place(snap?.sketch === "circle" ? "circle" : "rect", Number(wide), Number(deep))}
+              onClick={() =>
+                bench?.place(
+                  snap?.sketch === "circle" ? "circle" : snap?.sketch === "slot" ? "slot" : "rect",
+                  Number(wide),
+                  Number(deep),
+                )
+              }
             >
               Place
             </button>
@@ -364,6 +376,13 @@ export function Studio() {
               onClick={() => bench?.setSketch("circle")}
             >
               <Circle className="icon" /> Round
+            </button>
+            <button
+              type="button"
+              className={snap?.sketch === "slot" ? "solid on" : "solid"}
+              onClick={() => bench?.setSketch("slot")}
+            >
+              Keyway
             </button>
             <button type="button" className="solid" onClick={() => bench?.addWasher()}>
               Washer
@@ -666,6 +685,38 @@ export function Studio() {
                   onClick={() => void bench?.boltCircle(Number(holes), Number(drill), Number(pcd))}
                 >
                   Bolt circle
+                </button>
+              </div>
+              <div className="drill-row">
+                <label className="num">
+                  Pitch
+                  <input inputMode="decimal" value={pitch} onChange={(e) => setPitch(e.target.value)} />
+                </label>
+                <button
+                  type="button"
+                  className="tool"
+                  disabled={snap?.busy}
+                  onClick={() => void bench?.holeRow(Number(holes), Number(drill), Number(pitch))}
+                >
+                  Row
+                </button>
+              </div>
+              <div className="drill-row">
+                <label className="num">
+                  Cb Ø
+                  <input inputMode="decimal" value={cbore} onChange={(e) => setCbore(e.target.value)} />
+                </label>
+                <label className="num">
+                  Deep
+                  <input inputMode="decimal" value={cdeep} onChange={(e) => setCdeep(e.target.value)} />
+                </label>
+                <button
+                  type="button"
+                  className="tool"
+                  disabled={snap?.busy}
+                  onClick={() => void bench?.counterbore(Number(drill), Number(cbore), Number(cdeep))}
+                >
+                  Counterbore
                 </button>
               </div>
               <div className="cluster" style={{ marginTop: 8 }}>

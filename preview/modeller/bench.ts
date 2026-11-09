@@ -4,11 +4,11 @@ import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { cylinder, cube, intersect, subtract, union, volume } from "./gs.js";
 import { BED, BOOLEAN_LIMIT, METALS } from "./library";
-import { makeSolid, SOLID_LABEL, type SolidKind } from "./solids";
+import { makeSolid, SOLID_LABEL, stadium, type SolidKind } from "./solids";
 import { encodeSTL, loadBuffer, normalizeUnits, parseSTL, thinTriangles } from "./stl";
 
 export type Tool = "translate" | "rotate" | "scale";
-export type Sketch = "rect" | "circle";
+export type Sketch = "rect" | "circle" | "slot";
 export type SketchOp = "add" | "cut" | "top";
 export type Shade = "metal" | "clay" | "wire";
 export type BoolOp = "union" | "subtract" | "intersect";
@@ -417,7 +417,8 @@ export class Bench {
       this.leavePull(false);
       this.transform.detach();
       this.orbit.enableRotate = false;
-      const shape = mode === "rect" ? "a rectangle" : "out from the centre of a round";
+      const shape =
+        mode === "rect" ? "a rectangle" : mode === "slot" ? "a slot, length by width" : "out from the centre of a round";
       const act =
         this.sketchOp === "cut"
           ? `It cuts ${round1(this.sketchHeight)} mm down from the top of the selected part.`
@@ -465,7 +466,7 @@ export class Bench {
       cy = c.y;
     }
     if (kind === "circle") this.commitFoot({ kind, cx, cy, w: w / 2, d: w / 2 });
-    else this.commitFoot({ kind: "rect", cx, cy, w, d });
+    else this.commitFoot({ kind, cx, cy, w, d });
   }
 
   pullBy(mm: number) {
@@ -846,6 +847,159 @@ export class Bench {
       at += bit.length;
     }
     const name = `${n} × Ø${round1(d)} on Ø${round1(pitch)}`;
+    if (this.triCount(stock) > BOOLEAN_LIMIT || tris.length / 9 > BOOLEAN_LIMIT) {
+      this.setStatus(`${name} is too heavy to cut out of ${stock.name}.`);
+      return;
+    }
+    this.pushUndo();
+    const tool = this.makePart(tris, name, "#c47a5a");
+    this.selectedId = tool.id;
+    this.face = null;
+    this.pickPoint = null;
+    this.hideFace();
+    await this.applyBoolean(stock, tool, "subtract", false);
+  }
+
+  async counterbore(diameter: number, bore: number, depth: number) {
+    const stock = this.current();
+    if (!stock || this.busy) return;
+    const d = Math.min(40, Math.max(0.5, Number.isFinite(diameter) ? diameter : 6));
+    const cb = Math.min(80, Number.isFinite(bore) ? bore : d * 2);
+    const deep = Math.min(40, Math.max(0.4, Number.isFinite(depth) ? depth : 3));
+    if (cb < d + 0.4) {
+      this.setStatus("The counterbore has to be wider than the drill.");
+      return;
+    }
+    stock.mesh.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(stock.mesh);
+    const thick = Math.max(0.4, box.max.z - box.min.z);
+    if (deep >= thick - 0.15) {
+      this.setStatus("That counterbore is as deep as the part. Use Drill through.");
+      return;
+    }
+    const aimed = this.face != null && this.pickPoint;
+    const cx = aimed ? this.pickPoint!.x : (box.min.x + box.max.x) / 2;
+    const cy = aimed ? this.pickPoint!.y : (box.min.y + box.max.y) / 2;
+    const half = Math.max(box.max.x - cx, cx - box.min.x, box.max.y - cy, cy - box.min.y);
+    if (cb / 2 > half + 0.2) {
+      this.setStatus("That counterbore is wider than the part.");
+      return;
+    }
+    const throughH = Math.max(6, thick + 8);
+    const zThrough = Math.min(box.min.z, 0) - 4;
+    const drillBit = cylinder(cx, cy, zThrough, d / 2, throughH, 28);
+    const boreBit = cylinder(cx, cy, box.max.z - deep, cb / 2, deep + 0.4, 32);
+    const tris = union(drillBit, boreBit);
+    if (!tris || tris.length < 36) {
+      this.setStatus("The counterbore did not form a solid.");
+      return;
+    }
+    const name = `Ø${round1(d)} × Cb Ø${round1(cb)} × ${round1(deep)}`;
+    await this.cutTris(stock, tris, name);
+  }
+
+  async holeRow(count: number, diameter: number, pitch: number) {
+    const stock = this.current();
+    if (!stock || this.busy) return;
+    const n = Math.max(2, Math.min(8, Math.round(count) || 3));
+    const d = Math.min(40, Math.max(0.5, Number.isFinite(diameter) ? diameter : 4));
+    const step = Math.min(80, Math.max(d + 0.4, Number.isFinite(pitch) ? pitch : 8));
+    if (step < d + 0.3) {
+      this.setStatus("Those holes overlap. Widen the pitch.");
+      return;
+    }
+    stock.mesh.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(stock.mesh);
+    const cx = (box.min.x + box.max.x) / 2;
+    const cy = (box.min.y + box.max.y) / 2;
+    const span = (n - 1) * step;
+    if (cx - span / 2 - d / 2 < box.min.x - 0.2 || cx + span / 2 + d / 2 > box.max.x + 0.2) {
+      this.setStatus("That row is wider than the part.");
+      return;
+    }
+    const h = Math.max(6, box.max.z - box.min.z + 8);
+    const z0 = Math.min(box.min.z, 0) - 4;
+    const chunks: Float32Array[] = [];
+    for (let i = 0; i < n; i++) {
+      chunks.push(cylinder(cx - span / 2 + i * step, cy, z0, d / 2, h, 28));
+    }
+    const name = `${n} × Ø${round1(d)} every ${round1(step)}`;
+    await this.cutTris(stock, this.joinTris(chunks), name);
+  }
+
+  async split() {
+    const stock = this.current();
+    if (!stock || this.busy) return;
+    if (this.triCount(stock) > BOOLEAN_LIMIT) {
+      this.setStatus(`${stock.name} is over the ${BOOLEAN_LIMIT.toLocaleString()}-triangle cut, so it stays in one piece.`);
+      return;
+    }
+    if (this.parts.length >= 23) {
+      this.setStatus("Not enough room in the list for both halves.");
+      return;
+    }
+    stock.mesh.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(stock.mesh);
+    const z = this.sectionOn ? this.sectionZ : (box.min.z + box.max.z) / 2;
+    if (z <= box.min.z + 0.4 || z >= box.max.z - 0.4) {
+      this.setStatus("The section misses the part.");
+      return;
+    }
+    const pad = 2;
+    const sx = box.max.x - box.min.x + pad * 2;
+    const sy = box.max.y - box.min.y + pad * 2;
+    const below = cube(box.min.x - pad, box.min.y - pad, box.min.z - 8, sx, sy, z - (box.min.z - 8));
+    const above = cube(box.min.x - pad, box.min.y - pad, z, sx, sy, box.max.z + 8 - z);
+    this.busy = true;
+    this.setStatus(`Splitting ${stock.name} at ${round1(z)} mm…`);
+    await new Promise((r) => setTimeout(r, 40));
+    if (this.dead) return;
+    try {
+      const body = this.worldTris(stock.mesh);
+      const low = intersect(body, below);
+      const high = intersect(body, above);
+      if (!low || low.length < 9 || !high || high.length < 9) {
+        this.setStatus("The section did not cut a solid.");
+        return;
+      }
+      this.pushUndo();
+      const name = stock.name;
+      const color = stock.color;
+      this.removePart(stock);
+      this.makePart(low, `${name} lower`, color);
+      const upper = this.makePart(high, `${name} upper`, color);
+      this.selectedId = upper.id;
+      this.face = null;
+      this.hideFace();
+      this.attachGizmo();
+      this.setStatus(
+        `Split ${name} at ${round1(z)} mm. ${round1(z - box.min.z)} mm below, ${round1(box.max.z - z)} mm above.`,
+      );
+    } catch {
+      this.setStatus("The split failed. The part is unchanged.");
+    } finally {
+      this.busy = false;
+      this.emit();
+    }
+  }
+
+  private joinTris(chunks: Float32Array[]) {
+    let total = 0;
+    for (const bit of chunks) total += bit.length;
+    const tris = new Float32Array(total);
+    let at = 0;
+    for (const bit of chunks) {
+      tris.set(bit, at);
+      at += bit.length;
+    }
+    return tris;
+  }
+
+  private async cutTris(stock: Part, tris: Float32Array, name: string) {
+    if (this.parts.length >= 24) {
+      this.setStatus("Twenty-four parts is the limit on this bench.");
+      return;
+    }
     if (this.triCount(stock) > BOOLEAN_LIMIT || tris.length / 9 > BOOLEAN_LIMIT) {
       this.setStatus(`${name} is too heavy to cut out of ${stock.name}.`);
       return;
@@ -1881,7 +2035,7 @@ export class Bench {
       return { kind: "circle" as const, cx: a, cy: b, w: r, d: r };
     }
     return {
-      kind: "rect" as const,
+      kind: this.sketch === "slot" ? ("slot" as const) : ("rect" as const),
       cx: (a + c) / 2,
       cy: (b + d) / 2,
       w: Math.abs(c - a),
@@ -1889,10 +2043,13 @@ export class Bench {
     };
   }
 
-  private showSketchPreview(foot: { kind: "rect" | "circle"; cx: number; cy: number; w: number; d: number }) {
+  private showSketchPreview(foot: { kind: "rect" | "circle" | "slot"; cx: number; cy: number; w: number; d: number }) {
     const h = this.sketchHeight;
     const old = this.sketchPreview.geometry;
-    if (foot.kind === "rect") {
+    if (foot.kind === "slot") {
+      this.sketchPreview.geometry = this.slotPreview(foot.w, foot.d, h);
+      this.sketchPreview.rotation.set(0, 0, 0);
+    } else if (foot.kind === "rect") {
       this.sketchPreview.geometry = new THREE.BoxGeometry(Math.max(foot.w, 0.2), Math.max(foot.d, 0.2), h);
       this.sketchPreview.rotation.set(0, 0, 0);
     } else {
@@ -1905,12 +2062,26 @@ export class Bench {
     this.sketchPreview.visible = true;
   }
 
+  private slotPreview(w: number, d: number, h: number) {
+    const long = Math.max(w, d, 0.4);
+    const short = Math.max(Math.min(w, d), 0.4);
+    const r = short / 2;
+    const hx = Math.max(0, long / 2 - r);
+    const shape = new THREE.Shape();
+    shape.absarc(-hx, 0, r, Math.PI / 2, -Math.PI / 2, true);
+    shape.absarc(hx, 0, r, -Math.PI / 2, Math.PI / 2, true);
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false, curveSegments: 10 });
+    geo.translate(0, 0, -h / 2);
+    if (w < d) geo.rotateZ(Math.PI / 2);
+    return geo;
+  }
+
   private commitSketch(x0: number, y0: number, x1: number, y1: number) {
     this.sketchPreview.visible = false;
     this.commitFoot(this.footprint(x0, y0, x1, y1));
   }
 
-  private commitFoot(foot: { kind: "rect" | "circle"; cx: number; cy: number; w: number; d: number }) {
+  private commitFoot(foot: { kind: "rect" | "circle" | "slot"; cx: number; cy: number; w: number; d: number }) {
     const h = this.sketchHeight;
     if (foot.w < 1 || foot.d < 1) {
       this.setStatus("That footprint is under 1 mm. Drag a larger one.");
@@ -1924,9 +2095,11 @@ export class Bench {
     const tris =
       foot.kind === "rect"
         ? cube(-foot.w / 2, -foot.d / 2, 0, foot.w, foot.d, span.h)
-        : cylinder(0, 0, 0, foot.w, span.h, 40);
-    const name = foot.kind === "rect" ? "Block" : "Round";
-    const across = foot.kind === "rect" ? `${round1(foot.w)} × ${round1(foot.d)}` : `Ø${round1(foot.w * 2)}`;
+        : foot.kind === "slot"
+          ? stadium(foot.w, foot.d, span.h)
+          : cylinder(0, 0, 0, foot.w, span.h, 40);
+    const name = foot.kind === "rect" ? "Block" : foot.kind === "slot" ? "Slot" : "Round";
+    const across = foot.kind === "circle" ? `Ø${round1(foot.w * 2)}` : `${round1(foot.w)} × ${round1(foot.d)}`;
     if (this.sketchOp === "cut" || this.sketchOp === "top") {
       const stock = this.current();
       if (!stock) {

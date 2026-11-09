@@ -88,12 +88,35 @@ function wedge(): Float32Array {
 }
 
 function slot(): Float32Array {
-  const body = cube(-14, -5, -4, 28, 10, 8);
-  const left = cylinder(-14, 0, -4, 5, 8, 20);
-  const right = cylinder(14, 0, -4, 5, 8, 20);
-  const one = union(body, left);
-  const two = one ? union(one, right) : null;
-  return two && two.length > 36 ? two : body;
+  return stadium(38, 10, 8);
+}
+
+/** A stadium. Length and width are the overall sizes. Z runs from 0 up to `height`. */
+export function stadium(length: number, width: number, height: number): Float32Array {
+  const alongX = length >= width;
+  const L = Math.max(length, width);
+  const W = Math.min(length, Math.max(width, 0.4));
+  const r = W / 2;
+  const straight = Math.max(0, L - W);
+  const hx = straight / 2;
+  const body =
+    straight > 0.15 ? cube(-hx, -r, 0, straight, W, height) : cylinder(0, 0, 0, r, height, 24);
+  let tris = body;
+  if (straight > 0.15) {
+    const left = cylinder(-hx, 0, 0, r, height, 20);
+    const right = cylinder(hx, 0, 0, r, height, 20);
+    const one = union(body, left);
+    const two = one ? union(one, right) : null;
+    if (two && two.length > 36) tris = two;
+  }
+  if (alongX) return tris;
+  const out = new Float32Array(tris.length);
+  for (let i = 0; i < tris.length; i += 3) {
+    out[i] = -tris[i + 1]!;
+    out[i + 1] = tris[i]!;
+    out[i + 2] = tris[i + 2]!;
+  }
+  return out;
 }
 
 export function makeSolid(kind: SolidKind): Float32Array {
